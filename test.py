@@ -1,52 +1,55 @@
-
-import os
-import requests
-import time
+import cv2
 import pymysql
+import threading
+import requests
+
+url = "http://127.0.0.1:8702"
+params = {'threshold': 0.1}
+
+conn = pymysql.connect(
+    host="127.0.0.1",
+    port=3306,
+    user="root",
+    password="123456",
+    database=""
+)
+cursor = conn.cursor()
 
 
+def send_data(frame,url):
+    cv2.imwrite("tmp.jpg",frame)
+    with open("tmp.jpg","wb") as f:
+        img = f.read()
+        response = requests.post(url=url,params=params,data=img).json()
+        confidence = response["confidence"]
+        label = response["label"]
+        print(confidence,label)
+        save_data(confidence,label)
 
-def take_phote():
-    # 执行命令行命令
-    os.system('fswebcam -S 10 -r 640x480 ./tmp.jpg')
-    print("拍摄成功")
+def save_data(confidence,label):
+    sql = """"insert into table(confidence,label) values(%s,%s)"""
+    cursor.execute(sql,(confidence,label))
+    conn.commit()
 
-def get_photo(url):
-    with open('./tmp.jpg', 'rb') as f:
-        img_data = f.read()
-        result = requests.post(
-            url=url,  # 请确认IP地址是否正确
-            params=params,
-            data=img_data)
-        return result.json()
 
 if __name__ == '__main__':
-    # 连接数据库
-    conn = pymysql.connect(
-        host="127.0.0.1",
-        port=3306,  # 端口号
-        user="root",  # 数据库用户
-        password="123456",  # 数据库密码
-        database="image_data"  # 要连接的数据库名称
-    )
-    cursor = conn.cursor()
+    cap = cv2.VideoCapture(0)
 
-    url = "http://localhost:24405/"  # 边缘计算节点的地址
-    params = {'threshold': 0.1}
+    while True:
+        ret,frame = cap.read()
+        if not ret:
+            print("没有读取到图像")
+            break
 
-    for i in range(10):
-        print("准备拍照")
-        time.sleep(5)
-        take_phote()
-        print("拍照完成")
-        time.sleep(1)
-        data = get_photo(url)
 
-        confidence = data["results"][0]["confidence"]
-        score = data["results"][0]["score"]
-        label = data["results"][0]["label"]
+        if cv2.waitKey(1) == ord("w"):
+            threading.Thread(save_data,args=(frame,url)).start()
 
-        sql_insert = """insert into test(confidence,score,label) values(%s,%s,%s)"""
-        cursor.execute(sql_insert, (confidence, score, label))
-        conn.commit()  # 提交请求，不然不会插入数据
+        if cv2.waitKey(1) == ord("q"):
+            break
+
+
+
+
+
 
